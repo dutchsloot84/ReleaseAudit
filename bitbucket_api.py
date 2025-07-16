@@ -63,5 +63,7 @@ def fetch_commits(bitbucket_base_url, repo_name, branch, bitbucket_auth, bitbuck
             logger.warning(f"Failed to fetch commits for {repo_name} branch {branch}: {str(e)}")
             raise
     
-    logger.info(f"Total commits fetched for {repo_name} branch {branch}: {len(all_commits)}")
+    logger.info(
+        f"Total commits fetched for {repo_name} branch {branch}: {len(all_commits)}"
+    )
     return all_commits

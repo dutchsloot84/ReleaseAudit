@@ -26,4 +26,6 @@ def write_excel(all_commits, missing_stories_data, output_file):
         with pd.ExcelWriter(output_file, engine='openpyxl', mode='a') as writer:
             df_missing.to_excel(writer, sheet_name="Missing Jira Stories", index=False)
     else:
-        logger.info("No missing Jira stories found or no commits fetched to compare.")
+        logger.info(
+            "No missing Jira stories found or no commits fetched to compare."
+        )
