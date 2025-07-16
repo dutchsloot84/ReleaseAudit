@@ -8,6 +8,7 @@ from bitbucket_api import fetch_commits
 from commit_processor import extract_stories
 from excel_writer import write_excel
 from jira_api import fetch_jira_stories, map_jira_issues
+from concurrent.futures import ThreadPoolExecutor
 
 # Logging setup
 timestamp = datetime.now().strftime("%Y%m%d-%H%M")
@@ -113,7 +114,13 @@ def main():
     output_file = f"gitxjira_report_{timestamp}.xlsx"
 
     # Load Jira stories from API
-    jira_issues = fetch_jira_stories(jira_base_url, jql, jira_auth, ca_bundle=ca_bundle if use_ca_bundle else None)
+    jira_issues = fetch_jira_stories(
+        jira_base_url,
+        jql,
+        jira_auth,
+        ca_bundle=ca_bundle if use_ca_bundle else None,
+        threads=4,
+    )
     jira_story_data = map_jira_issues(jira_issues)
 
     # Export Jira stories to Excel
@@ -122,48 +129,62 @@ def main():
         jira_df.to_excel(writer, sheet_name="Jira Stories", index=False)
     logger.info(f"Exported Jira stories to {output_file} (Jira Stories sheet)")
 
-    # Fetch and process commits
+    # Fetch and process commits concurrently
     all_commits = {}
     git_story_numbers = {}
     commit_hashes = {}
     branches = [develop_branch] if args.develop_only else [develop_branch, release_branch]
 
-    for repo_name, app_name in repos.items():
-        for branch in branches:
+    def process_repo_branch(repo_name, app_name, branch):
+        try:
             logger.info(f"Fetching commits for {repo_name} ({app_name}) branch {branch}")
-            try:
-                commits = fetch_commits(
-                    bitbucket_base_url,
-                    repo_name,
-                    branch,
-                    bitbucket_auth,
-                    bitbucket_headers,
-                    commit_fetch_limit,
-                    start_date=cutoff_date_obj,
-                    end_date=code_freeze_date
+            commits = fetch_commits(
+                bitbucket_base_url,
+                repo_name,
+                branch,
+                bitbucket_auth,
+                bitbucket_headers,
+                commit_fetch_limit,
+                start_date=cutoff_date_obj,
+                end_date=code_freeze_date
+            )
+            logger.info(f"Fetched {len(commits)} commits for {repo_name} branch {branch}")
+            local_story_numbers = {}
+            local_hashes = {}
+            filtered_commits = []
+            for commit in commits:
+                extracted = extract_stories(
+                    commit=commit,
+                    fix_version=fix_version,
+                    jira_story_data=jira_story_data,
+                    app_name=app_name,
+                    commit_hash=commit["id"],
+                    branch=branch,
+                    cutoff_date_obj=cutoff_date_obj,
+                    code_freeze_date=code_freeze_date,
+                    develop_branch=develop_branch,
+                    git_story_numbers=local_story_numbers,
+                    commit_hashes=local_hashes,
+                    exclude_patterns=[]
                 )
-                logger.info(f"Fetched {len(commits)} commits for {repo_name} branch {branch}")
-                filtered_commits = []
-                for commit in commits:
-                    extracted = extract_stories(
-                        commit=commit,
-                        fix_version=fix_version,
-                        jira_story_data=jira_story_data,
-                        app_name=app_name,
-                        commit_hash=commit["id"],
-                        branch=branch,
-                        cutoff_date_obj=cutoff_date_obj,
-                        code_freeze_date=code_freeze_date,
-                        develop_branch=develop_branch,
-                        git_story_numbers=git_story_numbers,
-                        commit_hashes=commit_hashes,
-                        exclude_patterns=[]
-                    )
-                    filtered_commits.extend(extracted)
-                if filtered_commits:
-                    all_commits.setdefault(app_name, []).extend(filtered_commits)
-            except Exception as e:
-                logger.error(f"Error fetching commits for {repo_name} branch {branch}: {str(e)}")
+                filtered_commits.extend(extracted)
+            return app_name, local_story_numbers, local_hashes, filtered_commits
+        except Exception as e:
+            logger.error(f"Error fetching commits for {repo_name} branch {branch}: {str(e)}")
+            return app_name, {}, {}, []
+
+    tasks = []
+    with ThreadPoolExecutor(max_workers=len(repos) * len(branches)) as executor:
+        for repo_name, app_name in repos.items():
+            for branch in branches:
+                tasks.append(executor.submit(process_repo_branch, repo_name, app_name, branch))
+
+        for fut in tasks:
+            app_name, local_story_numbers, local_hashes, filtered = fut.result()
+            git_story_numbers.update(local_story_numbers)
+            commit_hashes.update(local_hashes)
+            if filtered:
+                all_commits.setdefault(app_name, []).extend(filtered)
 
     # Identify missing Jira stories
     missing_from_git = [

@@ -4,15 +4,17 @@ import json
 import base64
 import logging
 import ssl
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
-def fetch_jira_stories(jira_base_url, jql, auth, max_results=50, ca_bundle=None):
+def fetch_jira_stories(jira_base_url, jql, auth, max_results=50, ca_bundle=None, threads=4):
     """Fetch Jira issues using JQL.
 
     The ``auth`` parameter can be either a tuple ``(email, token)`` for
     traditional Basic authentication or just a token string/tuple for Bearer
     token authentication.
+    ``threads`` controls how many pages are fetched concurrently.
     """
     if not jira_base_url.endswith('/'):
         jira_base_url += '/'
@@ -29,28 +31,48 @@ def fetch_jira_stories(jira_base_url, jql, auth, max_results=50, ca_bundle=None)
         headers['Authorization'] = f"Bearer {token}"
 
     context = ssl.create_default_context(cafile=ca_bundle) if ca_bundle else None
-    start_at = 0
-    issues = []
 
-    while True:
-        params = {
-            'jql': jql,
-            'startAt': start_at,
-            'maxResults': max_results,
-            'fields': 'key,issuetype,summary,components,fixVersions'
-        }
+    def _fetch(params):
         url = search_url + '?' + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, context=context) as resp:
-                data = json.load(resp)
-        except Exception as e:
-            logger.error(f"Failed to fetch Jira stories: {e}")
-            raise
-        issues.extend(data.get('issues', []))
-        if start_at + max_results >= data.get('total', len(issues)):
-            break
-        start_at += max_results
+        with urllib.request.urlopen(req, context=context) as resp:
+            return json.load(resp)
+
+    # Fetch first page synchronously to determine total
+    base_params = {
+        'jql': jql,
+        'startAt': 0,
+        'maxResults': max_results,
+        'fields': 'key,issuetype,summary,components,fixVersions'
+    }
+    try:
+        first_page = _fetch(base_params)
+    except Exception as e:
+        logger.error(f"Failed to fetch Jira stories: {e}")
+        raise
+
+    issues = first_page.get('issues', [])
+    total = first_page.get('total', len(issues))
+
+    # Prepare parameters for remaining pages
+    start_values = list(range(max_results, total, max_results))
+    pages = []
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [
+            executor.submit(_fetch, {**base_params, 'startAt': start})
+            for start in start_values
+        ]
+        for fut in futures:
+            try:
+                data = fut.result()
+                pages.append(data)
+            except Exception as e:
+                logger.error(f"Failed to fetch Jira page: {e}")
+                raise
+
+    for page in pages:
+        issues.extend(page.get('issues', []))
+
     logger.info(f"Fetched {len(issues)} Jira stories from API")
     return issues
 
