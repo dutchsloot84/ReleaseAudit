@@ -8,6 +8,7 @@ from bitbucket_api import fetch_commits
 from commit_processor import extract_stories
 from excel_writer import write_excel
 from jira_api import fetch_jira_stories, map_jira_issues
+from jira_token_manager import get_valid_access_token
 from concurrent.futures import ThreadPoolExecutor
 
 # Logging setup
@@ -36,6 +37,7 @@ def main():
     parser.add_argument('--jira-base-url', help='Jira API base URL')
     parser.add_argument('--jira-email', help='Jira account email')
     parser.add_argument('--jira-token', help='Jira API token')
+    parser.add_argument('--jira-token-file', help='Path to Jira token JSON file')
     parser.add_argument('--bitbucket-base-url', help='Bitbucket API base URL')
     parser.add_argument('--bitbucket-email', help='Bitbucket account email')
     parser.add_argument('--bitbucket-token', help='Bitbucket API token')
@@ -54,10 +56,10 @@ def main():
     bitbucket_token = get_config_value('BITBUCKET_TOKEN', 'bitbucket_token', config, args)
     jira_email = get_config_value('JIRA_EMAIL', 'jira_email', config, args)
     jira_token = get_config_value('JIRA_TOKEN', 'jira_token', config, args)
+    jira_token_file = get_config_value('JIRA_TOKEN_FILE', 'jira_token_file', config, args, 'jira_token.json')
     required_creds = {
         'BITBUCKET_EMAIL': bitbucket_email,
         'BITBUCKET_TOKEN': bitbucket_token,
-        'JIRA_TOKEN': jira_token,
     }
     missing_creds = [key for key, value in required_creds.items() if not value]
     if missing_creds:
@@ -97,7 +99,12 @@ def main():
     # Authentication
     bitbucket_auth = (bitbucket_email, bitbucket_token)
     bitbucket_headers = {"Accept": "application/json"}
-    jira_auth = (jira_email, jira_token) if jira_email else jira_token
+    if jira_token:
+        access_token = jira_token
+    else:
+        access_token = get_valid_access_token(jira_token_file)
+
+    jira_auth = (jira_email, access_token) if jira_email else access_token
 
     # Date calculations
     release_date = fix_version.replace("Mobilitas ", "")
