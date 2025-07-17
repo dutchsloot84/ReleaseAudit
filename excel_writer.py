@@ -13,17 +13,19 @@ def write_excel(all_commits, missing_stories_data, output_file):
         missing_stories_data (list): List of missing stories data.
         output_file (str): Path to the output Excel file.
     """
-    # Export commits to Excel
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        for app_name, commits in all_commits.items():
-            logger.info(f"Exporting {app_name} with {len(commits)} commits")
-            df = pd.DataFrame(commits)
-            df.to_excel(writer, sheet_name=app_name, index=False)
+    with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+        if all_commits:
+            for app_name, commits in all_commits.items():
+                logger.info("Exporting %s with %d commits", app_name, len(commits))
+                pd.DataFrame(commits).to_excel(writer, sheet_name=app_name, index=False)
+        else:
+            pd.DataFrame({"Info": ["No commit data fetched"]}).to_excel(
+                writer, sheet_name="Commits", index=False
+            )
 
-    # Export Missing Jira Stories
-    if missing_stories_data:
-        df_missing = pd.DataFrame(missing_stories_data)
-        with pd.ExcelWriter(output_file, engine='openpyxl', mode='a') as writer:
-            df_missing.to_excel(writer, sheet_name="Missing Jira Stories", index=False)
-    else:
-        logger.info("No missing Jira stories found or no commits fetched to compare.")
+        if missing_stories_data:
+            pd.DataFrame(missing_stories_data).to_excel(
+                writer, sheet_name="Missing Jira Stories", index=False
+            )
+        else:
+            logger.info("No missing Jira stories found or no commits fetched to compare.")

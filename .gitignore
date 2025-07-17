@@ -1,0 +1,18 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+
+# Logs
+*.log
+
+# Excel reports and data
+*.xlsx
+jira_stories.csv
+
+# IDE directories
+.vscode/
+.idea/
+
