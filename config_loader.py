@@ -20,20 +20,47 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Minimal default configuration created if config.json is missing
+DEFAULT_CONFIG = {
+    "repos": {},
+    "bitbucket_base_url": "https://bitbucket.example.com/rest/api/1.0",
+    "fix_version": "",
+    "release_branch": "release",
+    "develop_branch": "develop",
+}
+
+
+def ensure_default_config(config_path: Path) -> None:
+    """Create a default config file if it does not exist."""
+    if not config_path.exists():
+        try:
+            config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=4))
+            logger.info("Created default configuration at %s", config_path)
+        except OSError as exc:
+            logger.error("Failed to create default config: %s", exc)
+
 def load_config(config_file: str) -> Dict[str, object]:
-    """Load configuration from JSON file and .env variables."""
-    # Load .env from project root if present
-    env_path = Path(config_file).resolve().parent / ".env"
+    """Load configuration from JSON file and .env variables.
+
+    If the config file does not exist a minimal default config is created.
+    """
+    config_path = Path(config_file)
+    # Load .env from same directory if present
+    env_path = config_path.resolve().parent / ".env"
     load_dotenv(env_path)
 
+    ensure_default_config(config_path)
+
     try:
-        with open(config_file, "r", encoding="utf-8") as f:
+        with config_path.open("r", encoding="utf-8") as f:
             config = json.load(f)
-            logger.debug("Loaded configuration from %s", config_file)
+            logger.debug("Loaded configuration from %s", config_path)
             return config
-    except FileNotFoundError:
-        logger.debug("Config file %s not found. Relying on environment variables.", config_file)
-        return {}
     except json.JSONDecodeError as exc:
-        logger.error("Invalid JSON in config file %s: %s", config_file, exc)
+        logger.error("Invalid JSON in config file %s: %s", config_path, exc)
         raise ValueError(f"Invalid JSON in config file: {exc}")
+    except FileNotFoundError:
+        # ensure_default_config already attempted creation, but if we still
+        # cannot open the file, give an empty config
+        logger.error("Config file %s missing and could not be created", config_path)
+        return {}
