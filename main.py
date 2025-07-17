@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
+from tqdm import tqdm
+
 from config_loader import load_config
 from bitbucket_api import fetch_commits
 from excel_loader import load_jira_excel
@@ -14,7 +16,6 @@ from commit_processor import extract_stories
 from excel_writer import write_excel
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="config.json", help="Path to JSON config file")
     parser.add_argument("--develop-branch", help="Develop branch name override")
     parser.add_argument("--release-branch", help="Release branch name override")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--dry-run", action="store_true", help="Validate setup without network calls")
 
     branch_group = parser.add_mutually_exclusive_group()
     branch_group.add_argument(
@@ -77,7 +80,17 @@ def process_repo(
 ) -> List[dict]:
     results = []
     for branch in branches:
-        commits = fetch_commits(cfg["bitbucket_base_url"], repo_name, branch, auth, headers, limit, start_date=cutoff, end_date=freeze)
+        logger.info("Processing repo %s on branch %s", repo_name, branch)
+        commits = fetch_commits(
+            cfg["bitbucket_base_url"],
+            repo_name,
+            branch,
+            auth,
+            headers,
+            limit,
+            start_date=cutoff,
+            end_date=freeze,
+        )
         for commit in commits:
             extracted = extract_stories(
                 commit=commit,
@@ -99,14 +112,38 @@ def process_repo(
 
 def main() -> None:
     args = parse_args()
+
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    log_file = log_dir / f"{timestamp}-gitxjira.log"
+
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+    )
+
+    logger.info("Loading configuration...")
     config_path = Path(args.config)
     config = load_config(str(config_path))
 
-    # Required environment variables loaded by config_loader
+    jira_path = Path(args.jira_excel)
+    if not jira_path.exists():
+        logger.error("Jira Excel file %s not found", jira_path)
+        sys.exit(1)
+
     bitbucket_email = os.getenv("BITBUCKET_EMAIL")
     bitbucket_token = os.getenv("BITBUCKET_TOKEN")
     if not bitbucket_email or not bitbucket_token:
-        raise EnvironmentError("BITBUCKET_EMAIL and BITBUCKET_TOKEN must be set in .env")
+        logger.error("BITBUCKET_EMAIL and BITBUCKET_TOKEN must be set in .env")
+        sys.exit(1)
+
+    if args.dry_run:
+        logger.info("Dry run successful. Configuration and environment look good")
+        logger.info("Log file written to %s", log_file)
+        return
 
     repos = config.get("repos", {})
     develop_branch = args.develop_branch or config.get("develop_branch", "develop")
@@ -125,7 +162,8 @@ def main() -> None:
     code_freeze_date = release_date - timedelta(days=freeze_days)
     cutoff_date = code_freeze_date - timedelta(days=cutoff_days)
 
-    jira_story_data = load_jira_excel(args.jira_excel)
+    logger.info("Loading Jira stories...")
+    jira_story_data = load_jira_excel(str(jira_path))
 
     auth = (bitbucket_email, bitbucket_token)
     headers = {"Accept": "application/json"}
@@ -133,7 +171,8 @@ def main() -> None:
     all_commits: Dict[str, List[dict]] = {}
     git_story_numbers: Dict[str, str] = {}
     commit_hashes: Dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    logger.info("Processing repositories...")
+    with ThreadPoolExecutor(max_workers=4) as executor, tqdm(total=len(repos), desc="Repos") as progress:
         futures = {}
         for repo_name, app_name in repos.items():
             futures[executor.submit(
@@ -158,20 +197,25 @@ def main() -> None:
 
         for future in as_completed(futures):
             repo_name, app_name = futures[future]
+            progress.set_description(f"{repo_name}")
+            progress.update(1)
             try:
                 commits = future.result()
                 if commits:
                     all_commits.setdefault(app_name, []).extend(commits)
-            except Exception as exc:
-                logger.error("Failed processing %s: %s", repo_name, exc)
+            except Exception:
+                logger.exception("Failed processing %s", repo_name)
 
     missing = [story for story in jira_story_data if story not in git_story_numbers]
     missing_data = [jira_story_data[s] | {"Missing From": "Git", "Notes": ""} for s in missing]
 
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    output_file = f"gitxjira_report_{timestamp}.xlsx"
-    write_excel(all_commits, missing_data, output_file)
+    output_file = output_dir / f"gitxjira_report_{timestamp}.xlsx"
+    write_excel(all_commits, missing_data, str(output_file))
     logger.info("Report written to %s", output_file)
+    logger.info("Log file written to %s", log_file)
 
 
 if __name__ == "__main__":
