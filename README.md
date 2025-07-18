@@ -21,7 +21,19 @@ This tool compares Jira issues exported to Excel against Bitbucket commit histor
 
 Export issues from Jira as an Excel file (`.xlsx`) or CSV file containing columns such as *Issue key*, *Summary*, *Issue type*, *Components*, and *Fix version(s)*.
 
-Run the tool:
+Run the tool (Windows):
+
+```bat
+run_gitxjira.bat --jira-excel path/to/jira.xlsx
+```
+
+macOS/Linux:
+
+```bash
+./run_gitxjira.command --jira-excel path/to/jira.xlsx
+```
+
+Or directly with Python:
 
 ```bash
 python main.py --jira-excel path/to/jira.xlsx

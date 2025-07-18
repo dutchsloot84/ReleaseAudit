@@ -2,10 +2,11 @@ import argparse
 import logging
 import os
 import sys
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from tqdm import tqdm
 
@@ -31,13 +32,14 @@ def parse_args() -> argparse.Namespace:
         description="Compare Jira issues against Bitbucket commits"
     )
     parser.add_argument(
-        "--jira-excel", required=True, help="Path to exported Jira Excel or CSV file"
+        "--jira-excel", help="Path to exported Jira Excel or CSV file"
     )
     parser.add_argument("--config", default="config.json", help="Path to JSON config file")
     parser.add_argument("--develop-branch", help="Develop branch name override")
     parser.add_argument("--release-branch", help="Release branch name override")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--dry-run", action="store_true", help="Validate setup without network calls")
+    parser.add_argument("--open", action="store_true", help="Open the Excel report when done")
 
     branch_group = parser.add_mutually_exclusive_group()
     branch_group.add_argument(
@@ -51,6 +53,57 @@ def parse_args() -> argparse.Namespace:
         help="Process only the release branch",
     )
     return parser.parse_args()
+
+
+def ensure_directories() -> Tuple[Path, Path]:
+    """Ensure log and output directories exist."""
+    log_dir = Path("logs")
+    output_dir = Path("output")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir, output_dir
+
+
+def prompt_for_jira_file(provided: str | None) -> Path:
+    """Return path to Jira Excel, prompting the user if not provided."""
+    if provided:
+        return Path(provided)
+    user_input = input("Enter path to Jira Excel/CSV export: ").strip()
+    return Path(user_input)
+
+
+def ensure_credentials(env_path: Path) -> Tuple[str, str]:
+    """Ensure Bitbucket credentials are available, prompting if needed."""
+    email = os.getenv("BITBUCKET_EMAIL")
+    token = os.getenv("BITBUCKET_TOKEN")
+    if email and token:
+        return email, token
+
+    print("Bitbucket credentials not found in .env.\n")
+    email = input("Bitbucket Email: ").strip()
+    token = input("Bitbucket Token: ").strip()
+    # Append to .env
+    with env_path.open("a", encoding="utf-8") as f:
+        if email:
+            f.write(f"BITBUCKET_EMAIL={email}\n")
+        if token:
+            f.write(f"BITBUCKET_TOKEN={token}\n")
+    os.environ["BITBUCKET_EMAIL"] = email
+    os.environ["BITBUCKET_TOKEN"] = token
+    return email, token
+
+
+def open_file(path: Path) -> None:
+    """Open a file using the default program for the OS."""
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.call(["open", path])
+        else:
+            subprocess.call(["xdg-open", path])
+    except Exception as exc:
+        logger.warning("Could not open %s: %s", path, exc)
 
 
 def build_branches(args, config: Dict[str, str]) -> List[str]:
@@ -91,7 +144,7 @@ def process_repo(
             start_date=cutoff,
             end_date=freeze,
         )
-        for commit in commits:
+        for commit in tqdm(commits, desc=f"{app_name}-{branch}", leave=False):
             extracted = extract_stories(
                 commit=commit,
                 fix_version=cfg.get("fix_version", ""),
@@ -113,8 +166,8 @@ def process_repo(
 def main() -> None:
     args = parse_args()
 
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    # Ensure required folders exist
+    log_dir, output_dir = ensure_directories()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     log_file = log_dir / f"{timestamp}-gitxjira.log"
 
@@ -129,16 +182,13 @@ def main() -> None:
     config_path = Path(args.config)
     config = load_config(str(config_path))
 
-    jira_path = Path(args.jira_excel)
+    jira_path = prompt_for_jira_file(args.jira_excel)
     if not jira_path.exists():
         logger.error("Jira Excel file %s not found", jira_path)
         sys.exit(1)
 
-    bitbucket_email = os.getenv("BITBUCKET_EMAIL")
-    bitbucket_token = os.getenv("BITBUCKET_TOKEN")
-    if not bitbucket_email or not bitbucket_token:
-        logger.error("BITBUCKET_EMAIL and BITBUCKET_TOKEN must be set in .env")
-        sys.exit(1)
+    env_path = config_path.resolve().parent / ".env"
+    bitbucket_email, bitbucket_token = ensure_credentials(env_path)
 
     if args.dry_run:
         logger.info("Dry run successful. Configuration and environment look good")
@@ -206,16 +256,25 @@ def main() -> None:
             except Exception:
                 logger.exception("Failed processing %s", repo_name)
 
-    missing = [story for story in jira_story_data if story not in git_story_numbers]
+    missing = []
+    for story in tqdm(jira_story_data, desc="Jira compare", leave=False):
+        if story not in git_story_numbers:
+            missing.append(story)
     missing_data = [jira_story_data[s] | {"Missing From": "Git", "Notes": ""} for s in missing]
 
-    output_dir = Path("output")
-    output_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
     output_file = output_dir / f"gitxjira_report_{timestamp}.xlsx"
-    write_excel(all_commits, missing_data, str(output_file))
+    with tqdm(total=1, desc="Writing Excel", leave=False):
+        write_excel(all_commits, missing_data, str(output_file))
+        tqdm.write("Excel report generated")
     logger.info("Report written to %s", output_file)
     logger.info("Log file written to %s", log_file)
+
+    print("\nReport saved to", output_file)
+    print("Log file:", log_file)
+
+    if args.open:
+        open_file(output_file)
 
 
 if __name__ == "__main__":

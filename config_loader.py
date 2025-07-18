@@ -29,6 +29,19 @@ DEFAULT_CONFIG = {
     "develop_branch": "develop",
 }
 
+# Default environment content created if .env is missing
+DEFAULT_ENV = "BITBUCKET_EMAIL=\nBITBUCKET_TOKEN=\n"
+
+
+def ensure_env_file(env_path: Path) -> None:
+    """Create a default .env file if it does not exist."""
+    if not env_path.exists():
+        try:
+            env_path.write_text(DEFAULT_ENV)
+            logger.info("Created default .env at %s", env_path)
+        except OSError as exc:
+            logger.error("Failed to create .env file: %s", exc)
+
 
 def ensure_default_config(config_path: Path) -> None:
     """Create a default config file if it does not exist."""
@@ -47,6 +60,7 @@ def load_config(config_file: str) -> Dict[str, object]:
     config_path = Path(config_file)
     # Load .env from same directory if present
     env_path = config_path.resolve().parent / ".env"
+    ensure_env_file(env_path)
     load_dotenv(env_path)
 
     ensure_default_config(config_path)
