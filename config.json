@@ -5,9 +5,9 @@
         "STARSYSONE/claimcenter": "CC",
         "STARSYSONE/contactmanager": "CM"
     },
-    "bitbucket_base_url": "https://bitbucket.example.com/rest/api/1.0",
-    "fix_version": "Mobilitas 2025.06.13",
-    "release_branch": "release/r-53.0",
+    "bitbucket_base_url": "https://bitbucket.insu.dev-1.us-east-1.guidewire.net/rest/api/1.0",
+    "fix_version": "Mobilitas 2025.08.08",
+    "release_branch": "release/r-55.0",
     "develop_branch": "develop",
     "commit_fetch_limit": 100
 }
