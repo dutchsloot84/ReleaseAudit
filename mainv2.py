@@ -90,7 +90,7 @@ def main():
     develop_branch = get_config_value('DEVELOP_BRANCH', 'develop_branch', config, args, 'develop')
     bitbucket_base_url = get_config_value('BITBUCKET_BASE_URL', 'bitbucket_base_url', config, args,
                                          'https://bitbucket.insu.dev-1.us-east-1.guidewire.net/rest/api/1.0')
-    commit_fetch_limit = get_config_value('COMMIT_FETCH_LIMIT', 'commit_fetch_limit', config, args, 25)
+    commit_fetch_limit = get_config_value('COMMIT_FETCH_LIMIT', 'commit_fetch_limit', config, args, 100)
     cutoff_days = get_config_value('CUTOFF_DAYS', 'cutoff_days_before_code_freeze', config, args, 28)
     code_freeze_days = get_config_value('CODE_FREEZE_DAYS', 'code_freeze_days_before_release', config, args, 17)
 

@@ -204,7 +204,7 @@ def main() -> None:
         "BITBUCKET_BASE_URL",
         config.get("bitbucket_base_url", "https://bitbucket.example.com/rest/api/1.0"),
     )
-    commit_limit = int(config.get("commit_fetch_limit", 25))
+    commit_limit = int(config.get("commit_fetch_limit", 100))
     cutoff_days = int(config.get("cutoff_days_before_code_freeze", 28))
     freeze_days = int(config.get("code_freeze_days_before_release", 17))
 

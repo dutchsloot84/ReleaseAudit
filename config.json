@@ -8,5 +8,6 @@
     "bitbucket_base_url": "https://bitbucket.example.com/rest/api/1.0",
     "fix_version": "Mobilitas 2025.06.13",
     "release_branch": "release/r-53.0",
-    "develop_branch": "develop"
+    "develop_branch": "develop",
+    "commit_fetch_limit": 100
 }

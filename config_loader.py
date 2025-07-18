@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
     "fix_version": "",
     "release_branch": "release",
     "develop_branch": "develop",
+    "commit_fetch_limit": 100,
 }
 
 # Default environment content created if .env is missing
