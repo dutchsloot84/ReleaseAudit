@@ -50,13 +50,13 @@ def fetch_commits(
     while True:
         paginated_url = f"{commits_url}&start={start}&limit={limit}"
         try:
-            cert_path = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+            verify_path = os.environ.get("REQUESTS_CA_BUNDLE", True)
             response = requests.get(
                 paginated_url,
                 auth=bitbucket_auth,
                 headers=bitbucket_headers,
                 params=params,
-                verify=cert_path if cert_path else True,
+                verify=verify_path,
             )
             response.raise_for_status()
             commits = response.json()
