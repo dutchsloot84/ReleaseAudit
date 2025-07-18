@@ -7,6 +7,11 @@ import getpass
 
 # Ensure the script's directory is in sys.path so local modules can be imported
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Set corporate CA bundle path if not already set
+if not os.environ.get("REQUESTS_CA_BUNDLE"):
+    pem_path = os.path.join(os.path.dirname(__file__), "certs", "csaa_netskope_combined.pem")
+    os.environ["REQUESTS_CA_BUNDLE"] = pem_path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
