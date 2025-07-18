@@ -41,9 +41,11 @@ if "%MODE%"=="2" (
     set MODE_ARG=--release-only
 )
 
+set PYTHON_PATH=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\python.exe
+
 echo Running:
-echo .\python\python.exe %SCRIPT_DIR%main.py --jira-excel "!FILEPATH!" !MODE_ARG!
-"%SCRIPT_DIR%python\python.exe" "%SCRIPT_DIR%main.py" --jira-excel "!FILEPATH!" !MODE_ARG!
+echo %PYTHON_PATH% %SCRIPT_DIR%main.py --jira-excel "!FILEPATH!" !MODE_ARG!
+"%PYTHON_PATH%" "%SCRIPT_DIR%main.py" --jira-excel "!FILEPATH!" !MODE_ARG!
 
 popd
 pause

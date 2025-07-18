@@ -4,7 +4,8 @@ This tool compares Jira issues exported to Excel against Bitbucket commit histor
 
 ## Quick Start
 
-1. Run `install_requirements.bat` (Windows) or `./install_requirements.bat` via Terminal on macOS to install the Python packages using the bundled interpreter.
+1. Run `install_requirements.bat` (Windows) or `./install_requirements.bat` via Terminal on macOS to install the required packages using the included Python.
+   The interpreter resides in `python/python-3.13.5-embed-amd64`.
 2. Double‑click `run_release_audit.bat` (Windows) or run `./run_release_audit.command` on macOS/Linux.
 3. Select your exported Jira file (`.csv` or `.xlsx`) and choose the run mode when prompted.
 4. If credentials aren't set via environment variables, you'll be asked for your Bitbucket email and token.

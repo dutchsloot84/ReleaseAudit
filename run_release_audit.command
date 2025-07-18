@@ -39,6 +39,8 @@ elif [ "$mode" = "3" ]; then
   mode_arg="--release-only"
 fi
 
+PYTHON_PATH="$SCRIPT_DIR/python/python-3.13.5-embed-amd64/python.exe"
+
 echo "Running:"
-echo "./python/python.exe $SCRIPT_DIR/main.py --jira-excel \"$filepath\" $mode_arg"
-"$SCRIPT_DIR/python/python.exe" "$SCRIPT_DIR/main.py" --jira-excel "$filepath" $mode_arg
+echo "$PYTHON_PATH $SCRIPT_DIR/main.py --jira-excel \"$filepath\" $mode_arg"
+"$PYTHON_PATH" "$SCRIPT_DIR/main.py" --jira-excel "$filepath" $mode_arg
