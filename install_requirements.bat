@@ -5,8 +5,17 @@ rem Determine script dir
 set SCRIPT_DIR=%~dp0
 pushd %SCRIPT_DIR%
 
-set PYTHON_PATH=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\python.exe
-set GET_PIP=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\get-pip.py
+set PYTHON_DIR=%SCRIPT_DIR%python\python-3.13.5-embed-amd64
+set PYTHON_PATH=%PYTHON_DIR%\python.exe
+set GET_PIP=%PYTHON_DIR%\get-pip.py
+
+for %%f in ("%PYTHON_DIR%\python*._pth") do set PTH_FILE=%%f
+if exist "%PTH_FILE%" (
+    findstr /b /c:"import site" "%PTH_FILE%" >nul 2>&1
+    if errorlevel 1 (
+        echo import site>>"%PTH_FILE%"
+    )
+)
 
 "%PYTHON_PATH%" -m pip --version >nul 2>&1
 if errorlevel 1 (
