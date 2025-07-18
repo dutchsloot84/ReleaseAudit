@@ -16,12 +16,25 @@ This tool compares Jira issues exported to Excel against Bitbucket commit histor
 5. Optionally set `JIRA_BASE_URL` for links to your Jira instance. The default
    is `https://csaaig.atlassian.net/browse`.
 6. Optionally adjust `config.json` to list repositories and branches.
+7. `commit_fetch_limit` in `config.json` controls how many commits are fetched per API page (default 100).
 
 ## Usage
 
 Export issues from Jira as an Excel file (`.xlsx`) or CSV file containing columns such as *Issue key*, *Summary*, *Issue type*, *Components*, and *Fix version(s)*.
 
-Run the tool:
+Run the tool (Windows):
+
+```bat
+run_gitxjira.bat --jira-excel path/to/jira.xlsx
+```
+
+macOS/Linux:
+
+```bash
+./run_gitxjira.command --jira-excel path/to/jira.xlsx
+```
+
+Or directly with Python:
 
 ```bash
 python main.py --jira-excel path/to/jira.xlsx
@@ -51,5 +64,6 @@ Additional options:
 - `--develop-only` process only the develop branch.
 - `--release-only` process only the release branch.
 - `--config` path to configuration JSON.
+- adjust `commit_fetch_limit` in `config.json` to fetch more commits per page.
 
 The script outputs an Excel report `gitxjira_report_<timestamp>.xlsx` with Jira stories, commit details, and any stories missing from Git.

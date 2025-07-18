@@ -2,9 +2,20 @@ import requests
 import logging
 from datetime import datetime
 
+DEFAULT_FETCH_LIMIT = 100  # maximum commits per page supported by API
+
 logger = logging.getLogger(__name__)
 
-def fetch_commits(bitbucket_base_url, repo_name, branch, bitbucket_auth, bitbucket_headers, limit=25, start_date=None, end_date=None):
+def fetch_commits(
+    bitbucket_base_url,
+    repo_name,
+    branch,
+    bitbucket_auth,
+    bitbucket_headers,
+    limit: int = DEFAULT_FETCH_LIMIT,
+    start_date=None,
+    end_date=None,
+):
     """
     Fetch commits from a Bitbucket Server repository for a specific branch within a date range.
     
