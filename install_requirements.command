@@ -5,8 +5,9 @@ PYTHON_PATH="$PYTHON_DIR/python.exe"
 GET_PIP="$PYTHON_DIR/get-pip.py"
 
 PTH_FILE=$(ls "$PYTHON_DIR"/python*._pth 2>/dev/null | head -n 1)
-if [ -f "$PTH_FILE" ] && ! grep -q '^import site' "$PTH_FILE"; then
-  echo "import site" >> "$PTH_FILE"
+if [ -f "$PTH_FILE" ]; then
+  grep -Fxq '.' "$PTH_FILE" || echo '.' >> "$PTH_FILE"
+  grep -Fxq 'import site' "$PTH_FILE" || echo 'import site' >> "$PTH_FILE"
 fi
 
 if ! "$PYTHON_PATH" -m pip --version >/dev/null 2>&1; then

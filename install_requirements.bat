@@ -11,6 +11,12 @@ set GET_PIP=%PYTHON_DIR%\get-pip.py
 
 for %%f in ("%PYTHON_DIR%\python*._pth") do set PTH_FILE=%%f
 if exist "%PTH_FILE%" (
+    rem Ensure script directory is on the path
+    findstr /x "." "%PTH_FILE%" >nul 2>&1
+    if errorlevel 1 (
+        echo .>>"%PTH_FILE%"
+    )
+    rem Enable site so pip and PYTHONPATH work
     findstr /b /c:"import site" "%PTH_FILE%" >nul 2>&1
     if errorlevel 1 (
         echo import site>>"%PTH_FILE%"
