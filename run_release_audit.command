@@ -42,6 +42,7 @@ elif [ "$mode" = "3" ]; then
 fi
 
 PYTHON_PATH="$SCRIPT_DIR/python/python-3.13.5-embed-amd64/python.exe"
+export PYTHONPATH="$SCRIPT_DIR"
 
 echo "Running:"
 echo "$PYTHON_PATH $SCRIPT_DIR/main.py --jira-excel \"$filepath\" $mode_arg"
