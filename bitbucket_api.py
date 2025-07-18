@@ -47,16 +47,18 @@ def fetch_commits(
     start = 0
     params = {"start": start, "limit": limit}
 
+    cert_path = os.path.join(os.path.dirname(__file__), "certs", "csaa_netskope_combined.pem")
+    logger.info("Using certificate for HTTPS: %s", cert_path)
+
     while True:
         paginated_url = f"{commits_url}&start={start}&limit={limit}"
         try:
-            verify_path = os.environ.get("REQUESTS_CA_BUNDLE", True)
             response = requests.get(
                 paginated_url,
                 auth=bitbucket_auth,
                 headers=bitbucket_headers,
                 params=params,
-                verify=verify_path,
+                verify=cert_path,
             )
             response.raise_for_status()
             commits = response.json()
@@ -79,7 +81,9 @@ def fetch_commits(
             start = commits.get("nextPageStart", start + limit)
             params["start"] = start
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to fetch commits for {repo_name} branch {branch}: {str(e)}")
+            logger.warning(
+                f"Failed to fetch commits for {repo_name} branch {branch} using cert {cert_path}: {str(e)}"
+            )
             raise
     
     logger.info(f"Total commits fetched for {repo_name} branch {branch}: {len(all_commits)}")
