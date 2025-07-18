@@ -46,6 +46,7 @@ if "%MODE%"=="2" (
 set PYTHON_PATH=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\python.exe
 set PYTHONPATH=%SCRIPT_DIR%
 set REQUESTS_CA_BUNDLE=%~dp0certs\csaa_netskope_combined.pem
+set SSL_CERT_FILE=%REQUESTS_CA_BUNDLE%
 
 echo Running:
 echo %PYTHON_PATH% %SCRIPT_DIR%main.py --jira-excel "!FILEPATH!" !MODE_ARG!

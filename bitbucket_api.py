@@ -1,5 +1,6 @@
 import requests
 import logging
+import os
 from datetime import datetime
 
 DEFAULT_FETCH_LIMIT = 100  # maximum commits per page supported by API
@@ -49,7 +50,14 @@ def fetch_commits(
     while True:
         paginated_url = f"{commits_url}&start={start}&limit={limit}"
         try:
-            response = requests.get(paginated_url, auth=bitbucket_auth, headers=bitbucket_headers, params=params)
+            cert_path = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+            response = requests.get(
+                paginated_url,
+                auth=bitbucket_auth,
+                headers=bitbucket_headers,
+                params=params,
+                verify=cert_path if cert_path else True,
+            )
             response.raise_for_status()
             commits = response.json()
             values = commits.get("values", [])

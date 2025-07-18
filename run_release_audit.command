@@ -44,6 +44,7 @@ fi
 PYTHON_PATH="$SCRIPT_DIR/python/python-3.13.5-embed-amd64/python.exe"
 export PYTHONPATH="$SCRIPT_DIR"
 export REQUESTS_CA_BUNDLE="$SCRIPT_DIR/certs/csaa_netskope_combined.pem"
+export SSL_CERT_FILE="$REQUESTS_CA_BUNDLE"
 
 echo "Running:"
 echo "$PYTHON_PATH $SCRIPT_DIR/main.py --jira-excel \"$filepath\" $mode_arg"

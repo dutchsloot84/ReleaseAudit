@@ -12,6 +12,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 if not os.environ.get("REQUESTS_CA_BUNDLE"):
     pem_path = os.path.join(os.path.dirname(__file__), "certs", "csaa_netskope_combined.pem")
     os.environ["REQUESTS_CA_BUNDLE"] = pem_path
+
+# Also set SSL_CERT_FILE for libraries that respect only that variable
+if not os.environ.get("SSL_CERT_FILE"):
+    os.environ["SSL_CERT_FILE"] = os.environ.get("REQUESTS_CA_BUNDLE")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
