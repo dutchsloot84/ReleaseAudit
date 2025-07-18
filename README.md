@@ -2,30 +2,24 @@
 
 This tool compares Jira issues exported to Excel against Bitbucket commit history.
 
-## Setup
+## Quick Start
 
-1. Create a Python 3.9 environment.
-2. Install dependencies (including `python-dotenv`):
-   ```bash
-   pip install -r requirements.txt
-   ```
-   The script will attempt this automatically if modules are missing.
-3. Copy `.env.example` to `.env` and fill in your Bitbucket credentials.
-4. Set `BITBUCKET_BASE_URL` in `.env` if your Bitbucket host differs from the
-   default (`https://bitbucket.example.com/rest/api/1.0`).
-5. Optionally set `JIRA_BASE_URL` for links to your Jira instance. The default
-   is `https://csaaig.atlassian.net/browse`.
-6. Optionally adjust `config.json` to list repositories and branches.
-7. `commit_fetch_limit` in `config.json` controls how many commits are fetched per API page (default 100).
+1. Run `install_requirements.bat` (Windows) or `./install_requirements.bat` via Terminal on macOS to install the Python packages using the bundled interpreter.
+2. Double‑click `run_release_audit.bat` (Windows) or run `./run_release_audit.command` on macOS/Linux.
+3. Select your exported Jira file (`.csv` or `.xlsx`) and choose the run mode when prompted.
+4. If credentials aren't set via environment variables, you'll be asked for your Bitbucket email and token.
+5. The script outputs an Excel report in the `output` folder.
+
+`config.json` lists repositories and branches to process. Adjust `commit_fetch_limit` if you need to fetch more commits per API page.
 
 ## Usage
 
 Export issues from Jira as an Excel file (`.xlsx`) or CSV file containing columns such as *Issue key*, *Summary*, *Issue type*, *Components*, and *Fix version(s)*.
 
-Run the tool (Windows):
+Run the tool manually:
 
 ```bat
-run_gitxjira.bat --jira-excel path/to/jira.xlsx
+python main.py --jira-excel path/to/jira.xlsx
 ```
 
 For a guided experience that lets you pick the Jira file and run mode:
@@ -37,7 +31,7 @@ run_release_audit.bat
 
 macOS/Linux:
 ```bash
-./run_gitxjira.command
+./run_release_audit.command
 ```
 
 Or directly with Python:

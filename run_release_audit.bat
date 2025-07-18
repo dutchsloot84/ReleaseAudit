@@ -42,8 +42,8 @@ if "%MODE%"=="2" (
 )
 
 echo Running:
-echo python %SCRIPT_DIR%main.py --jira-excel "!FILEPATH!" !MODE_ARG!
-python "%SCRIPT_DIR%main.py" --jira-excel "!FILEPATH!" !MODE_ARG!
+echo .\python\python.exe %SCRIPT_DIR%main.py --jira-excel "!FILEPATH!" !MODE_ARG!
+"%SCRIPT_DIR%python\python.exe" "%SCRIPT_DIR%main.py" --jira-excel "!FILEPATH!" !MODE_ARG!
 
 popd
 pause

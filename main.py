@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import subprocess
+import getpass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -72,24 +73,12 @@ def prompt_for_jira_file(provided: str | None) -> Path:
     return Path(user_input)
 
 
-def ensure_credentials(env_path: Path) -> Tuple[str, str]:
-    """Ensure Bitbucket credentials are available, prompting if needed."""
-    email = os.getenv("BITBUCKET_EMAIL")
-    token = os.getenv("BITBUCKET_TOKEN")
-    if email and token:
-        return email, token
-
-    print("Bitbucket credentials not found in .env.\n")
-    email = input("Bitbucket Email: ").strip()
-    token = input("Bitbucket Token: ").strip()
-    # Append to .env
-    with env_path.open("a", encoding="utf-8") as f:
-        if email:
-            f.write(f"BITBUCKET_EMAIL={email}\n")
-        if token:
-            f.write(f"BITBUCKET_TOKEN={token}\n")
-    os.environ["BITBUCKET_EMAIL"] = email
-    os.environ["BITBUCKET_TOKEN"] = token
+def ensure_credentials() -> Tuple[str, str]:
+    """Return Bitbucket credentials, prompting if not set."""
+    email = os.environ.get("BITBUCKET_EMAIL") or input("Enter your Bitbucket email: ")
+    token = os.environ.get("BITBUCKET_TOKEN") or getpass.getpass(
+        "Enter your Bitbucket token: "
+    )
     return email, token
 
 
@@ -187,8 +176,7 @@ def main() -> None:
         logger.error("Jira Excel file %s not found", jira_path)
         sys.exit(1)
 
-    env_path = config_path.resolve().parent / ".env"
-    bitbucket_email, bitbucket_token = ensure_credentials(env_path)
+    bitbucket_email, bitbucket_token = ensure_credentials()
 
     if args.dry_run:
         logger.info("Dry run successful. Configuration and environment look good")
