@@ -4,6 +4,9 @@ import os
 import sys
 import subprocess
 import getpass
+
+# Ensure the script's directory is in sys.path so local modules can be imported
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
