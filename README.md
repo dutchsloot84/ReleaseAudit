@@ -2,9 +2,30 @@
 
 This tool compares Jira issues exported to Excel against Bitbucket commit history.
 
+## Getting Started
+
+1. **Install Python** – The scripts require Python 3.9 or newer. If you do not
+   already have Python:
+   - Windows/macOS: download it from [python.org](https://www.python.org/downloads/)
+     and ensure the `python` command is added to your `PATH` during install.
+   - macOS via Homebrew: `brew install python@3.9`
+   - Linux: install `python3` using your distribution's package manager.
+2. **Install certificates** – If API requests to Bitbucket fail due to SSL
+   errors, you may need to install the certificate bundle that ships with
+   Python. Look for `Install Certificates.command` in your Python installation
+   directory and run it. For corporate Bitbucket instances using custom or
+   self-signed certificates, set the `REQUESTS_CA_BUNDLE` environment variable
+   to the path of your `.pem` file.
+3. **Clone this repository** – `git clone <repo-url>` or download the source as
+   a ZIP archive and extract it.
+
 ## Setup
 
-1. Create a Python 3.9 environment.
+1. Create a Python 3.9 virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   ```
 2. Install dependencies (including `python-dotenv`):
    ```bash
    pip install -r requirements.txt
