@@ -6,6 +6,13 @@ set SCRIPT_DIR=%~dp0
 pushd %SCRIPT_DIR%
 
 set PYTHON_PATH=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\python.exe
+set GET_PIP=%SCRIPT_DIR%python\python-3.13.5-embed-amd64\get-pip.py
+
+"%PYTHON_PATH%" -m pip --version >nul 2>&1
+if errorlevel 1 (
+    echo Installing pip...
+    "%PYTHON_PATH%" "%GET_PIP%"
+)
 
 "%PYTHON_PATH%" -m pip install --upgrade pip
 "%PYTHON_PATH%" -m pip install -r requirements.txt

@@ -5,6 +5,8 @@ rem Determine the directory of this script to allow relative execution
 set SCRIPT_DIR=%~dp0
 pushd %SCRIPT_DIR%
 
+call "%SCRIPT_DIR%install_requirements.bat"
+
 set IDX=0
 for %%f in (*.csv *.xlsx) do (
     set /a IDX+=1

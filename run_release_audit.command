@@ -2,6 +2,8 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+"$SCRIPT_DIR/install_requirements.command"
+
 files=()
 idx=0
 for f in *.csv *.xlsx; do
