@@ -28,6 +28,12 @@ Run the tool (Windows):
 run_gitxjira.bat --jira-excel path/to/jira.xlsx
 ```
 
+For a guided experience that lets you pick the Jira file and run mode, use:
+
+```bat
+run_release_audit.bat
+```
+
 macOS/Linux:
 
 ```bash
