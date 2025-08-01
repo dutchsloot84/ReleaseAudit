@@ -66,6 +66,21 @@ This tool compares Jira issues retrieved from the Jira Cloud REST API against Bi
 
 > 🛡️ **Important**: Do not commit `jira_token.json`. It contains sensitive credentials. It is ignored by `.gitignore`.
 
+### 🖥️ GUI Token Setup
+
+Instead of manually copying the authorization code, you can run a small GUI helper located in `token_generator/`:
+
+```bash
+python token_generator/gui_token_setup.py
+```
+
+Follow the prompts to enter your *Client ID* and *Client Secret*. The tool launches your browser for approval and saves `jira_token.json` automatically. To build a standalone executable use:
+
+```bash
+pyinstaller --onefile token_generator/gui_token_setup.py
+```
+
+
 #### 🔁 If Token Expires
 
 If `refresh_token` is older than 30 days or fails:
