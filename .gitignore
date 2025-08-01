@@ -17,3 +17,14 @@ jira_token.json
 .vscode/
 .idea/
 
+build/gui_token_setup/Analysis-00.toc
+build/gui_token_setup/EXE-00.toc
+build/gui_token_setup/base_library.zip
+build/gui_token_setup/gui_token_setup.pkg
+build/gui_token_setup/PKG-00.toc
+build/gui_token_setup/PYZ-00.pyz
+build/gui_token_setup/PYZ-00.toc
+build/gui_token_setup/warn-gui_token_setup.txt
+build/gui_token_setup/xref-gui_token_setup.html
+/dist
+gui_token_setup.spec
