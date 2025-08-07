@@ -1,7 +1,12 @@
 # src/commit_processor.py
+"""Utilities for parsing commit messages and extracting Jira story data."""
+
+from __future__ import annotations
+
+import logging
 import re
 from datetime import datetime
-import logging
+from typing import Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,25 +15,45 @@ STORY_PATTERN = re.compile(r"[A-Z]+-\d+", re.IGNORECASE)
 VALIDATION_PATTERN = re.compile(r"^[A-Z]+-\d+$")
 CONCAT_PATTERN = re.compile(r"([A-Z]+-\d+)([_-]\w+)+", re.IGNORECASE)
 
-def clean_commit_message(message):
-    message = re.sub(r'[\r\n\t]+', ' ', message)
-    message = re.sub(r'\s+', ' ', message)
+def clean_commit_message(message: str) -> str:
+    """Normalize commit messages by stripping whitespace and odd characters."""
+    message = re.sub(r"[\r\n\t]+", " ", message)
+    message = re.sub(r"\s+", " ", message)
     message = message.replace("'", "").replace("\\u0027", "")
-    message = re.sub(r'[^a-zA-Z0-9\s:/_.-]', '', message)
+    message = re.sub(r"[^a-zA-Z0-9\s:/_.-]", "", message)
     return message.strip()
 
-def preprocess_commit_message(message):
+def preprocess_commit_message(message: str) -> str:
+    """Break apart concatenated story numbers in a commit message."""
     preprocessed_message = message
     for match in CONCAT_PATTERN.finditer(message):
         full_match = match.group(0)
         prefix = match.group(1)
         preprocessed_message = preprocessed_message.replace(full_match, prefix)
-    logger.debug(f"Preprocessed '{message}' to '{preprocessed_message}'")
+    logger.debug("Preprocessed '%s' to '%s'", message, preprocessed_message)
     return preprocessed_message
 
-def extract_stories(commit, fix_version, jira_story_data, app_name, commit_hash, branch,
-                    cutoff_date_obj, code_freeze_date, develop_branch, git_story_numbers, commit_hashes,
-                    exclude_patterns=None):
+def extract_stories(
+    commit: dict,
+    fix_version: str,
+    jira_story_data: Dict[str, dict],
+    app_name: str,
+    commit_hash: str,
+    branch: str,
+    cutoff_date_obj: datetime,
+    code_freeze_date: datetime,
+    develop_branch: str,
+    git_story_numbers: Dict[str, str],
+    commit_hashes: Dict[str, str],
+    bitbucket_base_url: str,
+    repo_name: str,
+    exclude_patterns: Optional[Iterable[str]] = None,
+) -> List[dict]:
+    """Extract Jira story references from a commit.
+
+    Returns a list of dictionaries representing commit rows enriched with
+    metadata for later reporting.
+    """
     if exclude_patterns is None:
         exclude_patterns = []
     exclude_regex = [re.compile(pattern, re.IGNORECASE) for pattern in exclude_patterns]
@@ -63,10 +88,21 @@ def extract_stories(commit, fix_version, jira_story_data, app_name, commit_hash,
             issue_type = jira_story_data.get(story_number, {}).get("IssueType", "Unknown")
             fix_version_field = jira_story_data.get(story_number, {}).get("FixVersion", "Unknown")
             app = jira_story_data.get(story_number, {}).get("App", app_name)
-            filtered_commits.append({
-                "Commit Hash": commit_hash, "Message": cleaned_message, "Issue Type": issue_type,
-                "App": app, "FixVersion": fix_version_field, "Commit Source": branch
-            })
+            project, repo = repo_name.split("/", 1)
+            commit_url = (
+                f"{bitbucket_base_url}/projects/{project}/repos/{repo}/commits/{commit_hash}"
+            )
+            filtered_commits.append(
+                {
+                    "Commit Hash": commit_hash,
+                    "Commit URL": commit_url,
+                    "Message": cleaned_message,
+                    "Issue Type": issue_type,
+                    "App": app,
+                    "FixVersion": fix_version_field,
+                    "Commit Source": branch,
+                }
+            )
         else:
             logger.debug(f"Invalid story number format: {story_number}")
 
@@ -75,9 +111,10 @@ def extract_stories(commit, fix_version, jira_story_data, app_name, commit_hash,
     return filtered_commits
 
 # 🔍 NEW FUNCTION: Extract all matched and unmatched commits
-def extract_story_mappings(commits, **kwargs):
-    all_filtered_commits = []
-    orphan_commits = []
+def extract_story_mappings(commits: Iterable[dict], **kwargs) -> tuple[List[dict], List[dict]]:
+    """Run :func:`extract_stories` across commits returning matched and orphan lists."""
+    all_filtered_commits: List[dict] = []
+    orphan_commits: List[dict] = []
 
     for commit in commits:
         commit_hash = commit["id"]

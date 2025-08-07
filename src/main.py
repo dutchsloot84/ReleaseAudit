@@ -8,13 +8,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import pandas as pd
+
 from tqdm import tqdm
 
 from config_loader import load_config
 from bitbucket_api import fetch_commits
-from jira_client import load_jira_issues
+from jira_api import load_jira_issues
 from commit_processor import extract_stories
-from excel_writer import write_excel
+from excel_writer import write_report
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--dry-run", action="store_true", help="Validate setup without network calls")
     parser.add_argument("--open", action="store_true", help="Open the Excel report when done")
+    parser.add_argument("--output", help="Path to output report")
+    parser.add_argument("--update-report", help="Update an existing report instead of creating a new one")
+    parser.add_argument(
+        "--merge-mode",
+        choices=["append", "upsert", "replace"],
+        default="upsert",
+        help="Sheet merge strategy when updating a report",
+    )
 
     branch_group = parser.add_mutually_exclusive_group()
     branch_group.add_argument(
@@ -114,6 +124,7 @@ def process_repo(
     git_story_numbers: Dict[str, str],
     commit_hashes: Dict[str, str],
 ) -> List[dict]:
+    """Process a single repository across branches and extract commit data."""
     results = []
     for branch in branches:
         logger.info("Processing repo %s on branch %s", repo_name, branch)
@@ -140,6 +151,8 @@ def process_repo(
                 develop_branch=develop_branch,
                 git_story_numbers=git_story_numbers,
                 commit_hashes=commit_hashes,
+                bitbucket_base_url=cfg["bitbucket_base_url"],
+                repo_name=repo_name,
                 exclude_patterns=[],
             )
             results.extend(extracted)
@@ -240,10 +253,70 @@ def main() -> None:
             missing.append(story)
     missing_data = [jira_story_data[s] | {"Missing From": "Git", "Notes": ""} for s in missing]
 
+    # Build data frames for all sheets
+    data_frames: Dict[str, pd.DataFrame] = {}
+    data_frames["Jira Stories"] = pd.DataFrame(list(jira_story_data.values()))
+    for app_name, commits in all_commits.items():
+        data_frames[app_name] = pd.DataFrame(commits)
+    if missing_data:
+        data_frames["Missing Jira Stories"] = pd.DataFrame(missing_data)
+
+    # Summary sheet
+    summary_rows = []
+    for app, df in data_frames.items():
+        if app in ("Jira Stories", "Missing Jira Stories", "Summary", "Metadata"):
+            continue
+        if not df.empty:
+            issue_counts = df.groupby("Issue Type").size()
+            for issue_type, count in issue_counts.items():
+                summary_rows.append({"Metric": f"{app} - {issue_type}", "Value": int(count)})
+            branch_counts = df.groupby("Commit Source").size()
+            for branch, count in branch_counts.items():
+                summary_rows.append({"Metric": f"{app} - {branch}", "Value": int(count)})
+    summary_rows.append({"Metric": "Total Missing From Git", "Value": len(missing_data)})
+    data_frames["Summary"] = pd.DataFrame(summary_rows)
+
+    # Metadata sheet
+    metadata = [
+        {"Key": "FixVersion", "Value": fix_version},
+        {"Key": "Branches", "Value": ", ".join(branches)},
+        {"Key": "Repos", "Value": ", ".join(repos.keys())},
+        {"Key": "Timestamp", "Value": datetime.now().isoformat(timespec="seconds")},
+        {"Key": "Script Version", "Value": "1.0"},
+    ]
+    data_frames["Metadata"] = pd.DataFrame(metadata)
+
+    hyperlink_specs = {
+        "Jira Stories": [{"url_col": "Link", "text_col": "Jira_Story"}],
+        "Missing Jira Stories": [{"url_col": "Link", "text_col": "Jira Story"}],
+    }
+    for app_name in all_commits.keys():
+        hyperlink_specs[app_name] = [{"url_col": "Commit URL", "text_col": "Commit Hash"}]
+
+    primary_keys = {
+        "Jira Stories": "Jira_Story",
+        "Missing Jira Stories": "Jira Story",
+    }
+    for app_name in all_commits.keys():
+        primary_keys[app_name] = "Commit Hash"
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    output_file = output_dir / f"gitxjira_report_{timestamp}.xlsx"
+    if args.update_report:
+        output_file = Path(args.update_report)
+    elif args.output:
+        output_file = Path(args.output)
+    else:
+        output_file = output_dir / f"gitxjira_report_{timestamp}.xlsx"
+
     with tqdm(total=1, desc="Writing Excel", leave=False):
-        write_excel(all_commits, missing_data, str(output_file))
+        write_report(
+            output_file=str(output_file),
+            data_frames=data_frames,
+            hyperlink_specs=hyperlink_specs,
+            update_existing=bool(args.update_report),
+            merge_mode=args.merge_mode,
+            primary_keys=primary_keys,
+        )
         tqdm.write("Excel report generated")
     logger.info("Report written to %s", output_file)
     logger.info("Log file written to %s", log_file)
