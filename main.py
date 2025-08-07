@@ -1,211 +1,259 @@
-import os
-import logging
 import argparse
-import pandas as pd
+import logging
+import os
+import sys
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+from tqdm import tqdm
+
 from config_loader import load_config
 from bitbucket_api import fetch_commits
+from jira_client import load_jira_issues
 from commit_processor import extract_stories
 from excel_writer import write_excel
 
-# Logging setup
-timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-log_filename = f"{timestamp}_gitxjira.log"
-log_filepath = os.path.join(os.getcwd(), log_filename)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(log_filepath), logging.StreamHandler()]
-)
 logger = logging.getLogger(__name__)
 
-def get_config_value(env_var, config_key, config_dict, args, default=None):
-    return (getattr(args, config_key, None) or
-            os.environ.get(env_var) or
-            config_dict.get(config_key) or
-            default)
 
-def load_jira_stories(csv_path):
-    """Load JIRA stories from a CSV file."""
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Compare Jira issues against Bitbucket commits"
+    )
+    parser.add_argument("--config", default="config.json", help="Path to JSON config file")
+    parser.add_argument("--develop-branch", help="Develop branch name override")
+    parser.add_argument("--release-branch", help="Release branch name override")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--dry-run", action="store_true", help="Validate setup without network calls")
+    parser.add_argument("--open", action="store_true", help="Open the Excel report when done")
+
+    branch_group = parser.add_mutually_exclusive_group()
+    branch_group.add_argument(
+        "--develop-only",
+        action="store_true",
+        help="Process only the develop branch",
+    )
+    branch_group.add_argument(
+        "--release-only",
+        action="store_true",
+        help="Process only the release branch",
+    )
+    return parser.parse_args()
+
+
+def ensure_directories() -> Tuple[Path, Path]:
+    """Ensure log and output directories exist."""
+    log_dir = Path("logs")
+    output_dir = Path("output")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir, output_dir
+
+
+
+
+def ensure_credentials(env_path: Path) -> Tuple[str, str]:
+    """Ensure Bitbucket credentials are available, prompting if needed."""
+    email = os.getenv("BITBUCKET_EMAIL")
+    token = os.getenv("BITBUCKET_TOKEN")
+    if email and token:
+        return email, token
+
+    print("Bitbucket credentials not found in .env.\n")
+    email = input("Bitbucket Email: ").strip()
+    token = input("Bitbucket Token: ").strip()
+    # Append to .env
+    with env_path.open("a", encoding="utf-8") as f:
+        if email:
+            f.write(f"BITBUCKET_EMAIL={email}\n")
+        if token:
+            f.write(f"BITBUCKET_TOKEN={token}\n")
+    os.environ["BITBUCKET_EMAIL"] = email
+    os.environ["BITBUCKET_TOKEN"] = token
+    return email, token
+
+
+def open_file(path: Path) -> None:
+    """Open a file using the default program for the OS."""
     try:
-        df = pd.read_csv(csv_path)
-        # Normalize column names (handle spaces, case, and underscores)
-        df.columns = [col.strip().replace(' ', '_').lower() for col in df.columns]
-        # Map possible column names for key
-        key_column = None
-        for col in ['key', 'issue_key']:
-            if col in df.columns:
-                key_column = col
-                break
-        if not key_column:
-            raise ValueError("Missing required column: 'key' or 'issue_key'")
-        required_columns = ['issue_type', 'summary']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns in CSV: {', '.join(missing_columns)}")
-        # Rename and select relevant columns
-        stories = []
-        for _, row in df.iterrows():
-            story = {
-                "Jira_Story": row[key_column].strip().upper(),
-                "Issue_Type": row['issue_type'],
-                "Summary": row['summary'],
-                "App": row.get('components', ''),
-                "Fix_Version": row.get('fix_versions', 'None'),
-                "Link": row.get('issue_link', f"https://csaaig.atlassian.net/browse/{row[key_column]}")
-            }
-            stories.append(story)
-        logger.info(f"Loaded {len(stories)} Jira stories from {csv_path}")
-        return {story["Jira_Story"]: story for story in stories}
-    except Exception as e:
-        logger.error(f"Failed to load Jira stories from {csv_path}: {str(e)}")
-        raise
+        if sys.platform.startswith("win"):
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.call(["open", path])
+        else:
+            subprocess.call(["xdg-open", path])
+    except Exception as exc:
+        logger.warning("Could not open %s: %s", path, exc)
 
-def main():
-    parser = argparse.ArgumentParser(description="Compare Bitbucket commits with Jira stories from CSV.")
-    parser.add_argument('--develop-only', action='store_true', help='Only check the develop branch')
-    parser.add_argument('--config', default='config.json', help='Path to config file')
-    parser.add_argument('--jira-csv', default='jira_stories.csv', help='Path to Jira stories CSV file')
-    parser.add_argument('--bitbucket-base-url', help='Bitbucket API base URL')
-    parser.add_argument('--fix-version', help='Fix version for Jira stories')
-    parser.add_argument('--release-branch', help='Release branch name')
-    parser.add_argument('--develop-branch', help='Develop branch name')
-    parser.add_argument('--test-range', action='store_true', help='Limit commit date range for testing')
-    args = parser.parse_args()
 
-    # Load configuration
-    config_path = os.path.join(os.path.dirname(__file__), args.config)
-    config = load_config(config_path)
+def build_branches(args, config: Dict[str, str]) -> List[str]:
+    develop = args.develop_branch or config.get("develop_branch", "develop")
+    release = args.release_branch or config.get("release_branch", "release")
+    if args.develop_only:
+        return [develop]
+    if args.release_only:
+        return [release]
+    return [develop, release]
 
-    # Environment variables
-    bitbucket_email = os.environ.get('BITBUCKET_EMAIL')
-    bitbucket_token = os.environ.get('BITBUCKET_TOKEN')  # Personal Access Token
-    required_vars = {
-        'BITBUCKET_EMAIL': bitbucket_email,
-        'BITBUCKET_TOKEN': bitbucket_token
-    }
-    missing_vars = [key for key, value in required_vars.items() if not value]
-    if missing_vars:
-        raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-    # Configuration values
-    repos = config.get('repos', {
-        "STARSYSONE/billingcenter": "BC", "STARSYSONE/policycenter": "PC",
-        "STARSYSONE/claimcenter": "CC", "STARSYSONE/contactmanager": "CM"
-    })
-    fix_version = get_config_value('FIX_VERSION', 'fix_version', config, args, 'Mobilitas 2025.06.13')
-    release_branch = get_config_value('RELEASE_BRANCH', 'release_branch', config, args, 'release/r-51.0')
-    develop_branch = get_config_value('DEVELOP_BRANCH', 'develop_branch', config, args, 'develop')
-    bitbucket_base_url = get_config_value('BITBUCKET_BASE_URL', 'bitbucket_base_url', config, args,
-                                         'https://bitbucket.insu.dev-1.us-east-1.guidewire.net/rest/api/1.0')
-    commit_fetch_limit = get_config_value('COMMIT_FETCH_LIMIT', 'commit_fetch_limit', config, args, 25)
-    cutoff_days = get_config_value('CUTOFF_DAYS', 'cutoff_days_before_code_freeze', config, args, 28)
-    code_freeze_days = get_config_value('CODE_FREEZE_DAYS', 'code_freeze_days_before_release', config, args, 17)
+def process_repo(
+    repo_name: str,
+    app_name: str,
+    branches: List[str],
+    cfg: Dict[str, str],
+    jira_story_data: Dict[str, dict],
+    cutoff: datetime,
+    freeze: datetime,
+    auth,
+    headers,
+    limit: int,
+    develop_branch: str,
+    git_story_numbers: Dict[str, str],
+    commit_hashes: Dict[str, str],
+) -> List[dict]:
+    results = []
+    for branch in branches:
+        logger.info("Processing repo %s on branch %s", repo_name, branch)
+        commits = fetch_commits(
+            cfg["bitbucket_base_url"],
+            repo_name,
+            branch,
+            auth,
+            headers,
+            limit,
+            start_date=cutoff,
+            end_date=freeze,
+        )
+        for commit in tqdm(commits, desc=f"{app_name}-{branch}", leave=False):
+            extracted = extract_stories(
+                commit=commit,
+                fix_version=cfg.get("fix_version", ""),
+                jira_story_data=jira_story_data,
+                app_name=app_name,
+                commit_hash=commit["id"],
+                branch=branch,
+                cutoff_date_obj=cutoff,
+                code_freeze_date=freeze,
+                develop_branch=develop_branch,
+                git_story_numbers=git_story_numbers,
+                commit_hashes=commit_hashes,
+                exclude_patterns=[],
+            )
+            results.extend(extracted)
+    return results
 
-    # SSL configuration
-    ca_bundle = r"C:\certs\csaa_netskope_combined.pem"
-    use_ca_bundle = True  # Set to False if CA bundle fails
 
-    # Authentication
-    bitbucket_auth = (bitbucket_email, bitbucket_token)
-    bitbucket_headers = {"Accept": "application/json"}
+def main() -> None:
+    args = parse_args()
 
-    # Date calculations
-    release_date = fix_version.replace("Mobilitas ", "")
-    release_date_obj = datetime.strptime(release_date, "%Y.%m.%d")
-    code_freeze_date = release_date_obj - timedelta(days=code_freeze_days)
-    cutoff_date_obj = code_freeze_date - timedelta(days=cutoff_days) if not args.test_range else datetime.now() - timedelta(days=3)
-
-    logger.info(f"Release Date: {release_date_obj.strftime('%Y-%m-%d')}")
-    logger.info(f"Code Freeze Date: {code_freeze_date.strftime('%Y-%m-%d')}")
-    logger.info(f"Cutoff Date: {cutoff_date_obj.strftime('%Y-%m-%d')}")
-
-    # Output file
+    # Ensure required folders exist
+    log_dir, output_dir = ensure_directories()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    output_file = f"gitxjira_report_{timestamp}.xlsx"
+    log_file = log_dir / f"{timestamp}-gitxjira.log"
 
-    # Load Jira stories from CSV
-    jira_csv_path = os.path.join(os.path.dirname(__file__), args.jira_csv)
-    jira_story_data = load_jira_stories(jira_csv_path)
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+    )
 
-    # Export Jira stories to Excel
-    jira_df = pd.DataFrame(list(jira_story_data.values()))
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        jira_df.to_excel(writer, sheet_name="Jira Stories", index=False)
-    logger.info(f"Exported Jira stories to {output_file} (Jira Stories sheet)")
+    logger.info("Loading configuration...")
+    config_path = Path(args.config)
+    config = load_config(str(config_path))
 
-    # Fetch and process commits
-    all_commits = {}
-    git_story_numbers = {}
-    commit_hashes = {}
-    branches = [develop_branch] if args.develop_only else [develop_branch, release_branch]
+    env_path = config_path.resolve().parent / ".env"
+    bitbucket_email, bitbucket_token = ensure_credentials(env_path)
 
-    for repo_name, app_name in repos.items():
-        for branch in branches:
-            logger.info(f"Fetching commits for {repo_name} ({app_name}) branch {branch}")
+    if args.dry_run:
+        logger.info("Dry run successful. Configuration and environment look good")
+        logger.info("Log file written to %s", log_file)
+        return
+
+    repos = config.get("repos", {})
+    develop_branch = args.develop_branch or config.get("develop_branch", "develop")
+    release_branch = args.release_branch or config.get("release_branch", "release")
+    branches = build_branches(args, config)
+    fix_version = config.get("fix_version", "")
+    base_url = os.getenv(
+        "BITBUCKET_BASE_URL",
+        config.get("bitbucket_base_url", "https://bitbucket.example.com/rest/api/1.0"),
+    )
+    commit_limit = int(config.get("commit_fetch_limit", 100))
+    cutoff_days = int(config.get("cutoff_days_before_code_freeze", 28))
+    freeze_days = int(config.get("code_freeze_days_before_release", 17))
+
+    release_date = datetime.strptime(fix_version.replace("Mobilitas ", ""), "%Y.%m.%d") if fix_version else datetime.now()
+    code_freeze_date = release_date - timedelta(days=freeze_days)
+    cutoff_date = code_freeze_date - timedelta(days=cutoff_days)
+
+    logger.info("Loading Jira stories via API...")
+    jira_story_data = load_jira_issues(fix_version)
+
+    auth = (bitbucket_email, bitbucket_token)
+    headers = {"Accept": "application/json"}
+
+    all_commits: Dict[str, List[dict]] = {}
+    git_story_numbers: Dict[str, str] = {}
+    commit_hashes: Dict[str, str] = {}
+    logger.info("Processing repositories...")
+    with ThreadPoolExecutor(max_workers=4) as executor, tqdm(total=len(repos), desc="Repos") as progress:
+        futures = {}
+        for repo_name, app_name in repos.items():
+            futures[executor.submit(
+                process_repo,
+                repo_name,
+                app_name,
+                branches,
+                {
+                    "bitbucket_base_url": base_url,
+                    "fix_version": fix_version,
+                },
+                jira_story_data,
+                cutoff_date,
+                code_freeze_date,
+                auth,
+                headers,
+                commit_limit,
+                develop_branch,
+                git_story_numbers,
+                commit_hashes,
+            )] = (repo_name, app_name)
+
+        for future in as_completed(futures):
+            repo_name, app_name = futures[future]
+            progress.set_description(f"{repo_name}")
+            progress.update(1)
             try:
-                commits = fetch_commits(
-                    bitbucket_base_url,
-                    repo_name,
-                    branch,
-                    bitbucket_auth,
-                    bitbucket_headers,
-                    commit_fetch_limit,
-                    start_date=cutoff_date_obj,
-                    end_date=code_freeze_date
-                )
-                logger.info(f"Fetched {len(commits)} commits for {repo_name} branch {branch}")
-                filtered_commits = []
-                for commit in commits:
-                    extracted = extract_stories(
-                        commit=commit,
-                        fix_version=fix_version,
-                        jira_story_data=jira_story_data,
-                        app_name=app_name,
-                        commit_hash=commit["id"],
-                        branch=branch,
-                        cutoff_date_obj=cutoff_date_obj,
-                        code_freeze_date=code_freeze_date,
-                        develop_branch=develop_branch,
-                        git_story_numbers=git_story_numbers,
-                        commit_hashes=commit_hashes,
-                        exclude_patterns=[]
-                    )
-                    filtered_commits.extend(extracted)
-                if filtered_commits:
-                    all_commits.setdefault(app_name, []).extend(filtered_commits)
-            except Exception as e:
-                logger.error(f"Error fetching commits for {repo_name} branch {branch}: {str(e)}")
+                commits = future.result()
+                if commits:
+                    all_commits.setdefault(app_name, []).extend(commits)
+            except Exception:
+                logger.exception("Failed processing %s", repo_name)
 
-    # Identify missing Jira stories
-    missing_from_git = [
-        story for story in jira_story_data
-        if story not in git_story_numbers
-    ]
-    missing_stories_data = [
-        {
-            "Jira Story": jira_story_data[story]["Jira_Story"],
-            "Issue Type": jira_story_data[story]["Issue_Type"],
-            "Summary": jira_story_data[story]["Summary"],
-            "App": jira_story_data[story]["App"],
-            "Fix Version": jira_story_data[story]["Fix_Version"],
-            "Link": jira_story_data[story]["Link"],
-            "Missing From": "Git",
-            "Notes": ""
-        }
-        for story in missing_from_git
-    ]
+    missing = []
+    for story in tqdm(jira_story_data, desc="Jira compare", leave=False):
+        if story not in git_story_numbers:
+            missing.append(story)
+    missing_data = [jira_story_data[s] | {"Missing From": "Git", "Notes": ""} for s in missing]
 
-    # Write commits and missing stories to Excel
-    with pd.ExcelWriter(output_file, engine='openpyxl', mode='a') as writer:
-        for app_name, commits in all_commits.items():
-            df = pd.DataFrame(commits)
-            df.to_excel(writer, sheet_name=app_name, index=False)
-        if missing_stories_data:
-            df_missing = pd.DataFrame(missing_stories_data)
-            df_missing.to_excel(writer, sheet_name="Missing Jira Stories", index=False)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    output_file = output_dir / f"gitxjira_report_{timestamp}.xlsx"
+    with tqdm(total=1, desc="Writing Excel", leave=False):
+        write_excel(all_commits, missing_data, str(output_file))
+        tqdm.write("Excel report generated")
+    logger.info("Report written to %s", output_file)
+    logger.info("Log file written to %s", log_file)
 
-    logger.info(f"Generated report: {output_file}")
+    print("\nReport saved to", output_file)
+    print("Log file:", log_file)
+
+    if args.open:
+        open_file(output_file)
+
 
 if __name__ == "__main__":
     main()
