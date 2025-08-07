@@ -1,26 +1,15 @@
 @echo off
-setlocal EnableDelayedExpansion
-
-rem Determine the directory of this script to allow relative execution
-set SCRIPT_DIR=%~dp0
-pushd %SCRIPT_DIR%
-
-set MODE_ARG=
-
-echo Choose run mode:
-echo   1. Full run (release + develop)
-echo   2. Develop only
-echo   3. Release only
-set /p MODE=Enter 1, 2, or 3:
-if "%MODE%"=="2" (
-    set MODE_ARG=--develop-only
-) else if "%MODE%"=="3" (
-    set MODE_ARG=--release-only
+setlocal
+REM Optional venv activation
+if exist ".venv\Scripts\activate.bat" (
+  call ".venv\Scripts\activate.bat"
 )
 
-echo Running:
-echo python %SCRIPT_DIR%main.py !MODE_ARG!
-python "%SCRIPT_DIR%main.py" !MODE_ARG!
+REM Run with passthrough args
+python src\main.py %*
 
-popd
-pause
+REM Examples:
+REM run_release_audit.bat
+REM run_release_audit.bat --update-report gitxjira_report_20250805-1201.xlsx --merge-mode upsert
+REM run_release_audit.bat --output my_report.xlsx
+endlocal
