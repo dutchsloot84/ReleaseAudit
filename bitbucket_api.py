@@ -1,6 +1,7 @@
 import requests
 import logging
 from datetime import datetime
+from urllib.parse import urlparse
 
 DEFAULT_FETCH_LIMIT = 100  # maximum commits per page supported by API
 
@@ -50,6 +51,27 @@ def fetch_commits(
         paginated_url = f"{commits_url}&start={start}&limit={limit}"
         try:
             response = requests.get(paginated_url, auth=bitbucket_auth, headers=bitbucket_headers, params=params)
+            if response.status_code in (401, 403, 404):
+                parsed = urlparse(bitbucket_base_url)
+                api_hint = (
+                    f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+                    if parsed.scheme and parsed.netloc
+                    else bitbucket_base_url.rstrip("/")
+                )
+                if response.status_code == 404:
+                    logger.warning(
+                        "Bitbucket returned 404 for %s. Verify VPN/connectivity and confirm the REST base URL "
+                        "(expected .../rest/api/1.0 or .../rest/api/latest, without duplicating the path). "
+                        "Current base: %s",
+                        commits_url,
+                        api_hint,
+                    )
+                else:
+                    logger.warning(
+                        "Bitbucket returned %s for %s. Verify credentials and connectivity.",
+                        response.status_code,
+                        commits_url,
+                    )
             response.raise_for_status()
             commits = response.json()
             values = commits.get("values", [])
