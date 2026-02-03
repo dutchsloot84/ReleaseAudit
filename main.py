@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple
 from tqdm import tqdm
 
 from config_loader import load_config
-from bitbucket_api import fetch_commits
+from bitbucket_api import fetch_commits, resolve_bitbucket_base_url
 from jira_client import load_jira_issues
 from commit_processor import extract_stories
 from excel_writer import write_excel
@@ -181,6 +181,11 @@ def main() -> None:
     base_url = os.getenv(
         "BITBUCKET_BASE_URL",
         config.get("bitbucket_base_url", "https://bitbucket.example.com/rest/api/1.0"),
+    )
+    base_url = resolve_bitbucket_base_url(
+        base_url,
+        bitbucket_auth=(bitbucket_email, bitbucket_token),
+        bitbucket_headers={"Accept": "application/json"},
     )
     commit_limit = int(config.get("commit_fetch_limit", 100))
     cutoff_days = int(config.get("cutoff_days_before_code_freeze", 28))

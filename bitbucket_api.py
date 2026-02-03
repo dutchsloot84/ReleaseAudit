@@ -1,10 +1,51 @@
-import requests
 import logging
 from datetime import datetime
+import requests
 
 DEFAULT_FETCH_LIMIT = 100  # maximum commits per page supported by API
 
 logger = logging.getLogger(__name__)
+
+
+def _build_api_base(base_url: str, api_version: str) -> str:
+    trimmed = base_url.rstrip("/")
+    if "/rest/api/" in trimmed:
+        trimmed = trimmed.split("/rest/api/")[0]
+    return f"{trimmed}/rest/api/{api_version}"
+
+
+def resolve_bitbucket_base_url(bitbucket_base_url, bitbucket_auth, bitbucket_headers):
+    candidates = [
+        _build_api_base(bitbucket_base_url, "1.0"),
+        _build_api_base(bitbucket_base_url, "latest"),
+    ]
+    for candidate in candidates:
+        try:
+            response = requests.get(
+                f"{candidate}/projects",
+                auth=bitbucket_auth,
+                headers=bitbucket_headers,
+                params={"limit": 1},
+                timeout=10,
+            )
+            if response.ok:
+                if candidate != bitbucket_base_url:
+                    logger.info("Using Bitbucket API base URL %s", candidate)
+                return candidate
+            logger.warning(
+                "Bitbucket API base URL %s returned %s. Response: %s",
+                candidate,
+                response.status_code,
+                response.text[:200],
+            )
+        except requests.exceptions.RequestException as exc:
+            logger.warning(
+                "Bitbucket API base URL %s is unreachable. Check VPN/SSO or URL. Error: %s",
+                candidate,
+                exc,
+            )
+    return bitbucket_base_url
+
 
 def fetch_commits(
     bitbucket_base_url,
