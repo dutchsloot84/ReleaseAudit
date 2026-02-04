@@ -60,7 +60,10 @@ This tool compares Jira issues retrieved from the Jira Cloud REST API against Bi
    ```
 
    Use `--redirect-uri` if you specified a custom redirect during the OAuth
-   setup.
+   setup. The redirect URI must **exactly** match what you registered in the
+   Atlassian app (including scheme and port). Authorization codes are short
+   lived and single-use, so re-run the browser authorization if you see a
+   400 error from `https://auth.atlassian.com/oauth/token`.
 
 4. The script writes `jira_token.json` locally next to your source files.
 
