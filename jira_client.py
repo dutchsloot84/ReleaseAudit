@@ -66,7 +66,7 @@ def fetch_issues_by_jql(jql, token_file="jira_token.json", max_results=100):
         "Accept": "application/json",
     }
     response = requests.get(
-        f"{jira_api_base}/search",
+        f"{jira_api_base}/search/jql",
         headers=headers,
         params={
             "jql": jql,
@@ -122,7 +122,7 @@ def load_jira_issues(fix_version: str, token_file: str = "jira_token.json") -> d
                     "fields": "summary,issuetype,fixVersions,components,status",
                 }
                 response = requests.get(
-                    f"{jira_api_base}/search", headers=headers, params=params
+                    f"{jira_api_base}/search/jql", headers=headers, params=params
                 )
                 response.raise_for_status()
                 data = response.json()
