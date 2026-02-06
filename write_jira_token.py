@@ -14,8 +14,17 @@ def generate_token(client_id: str, client_secret: str, code: str, redirect_uri: 
         "code": code,
         "redirect_uri": redirect_uri,
     }
-    response = requests.post(TOKEN_URL, json=payload)
-    response.raise_for_status()
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    response = requests.post(TOKEN_URL, data=payload, headers=headers, timeout=30)
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        details = response.text.strip()
+        if details:
+            raise requests.exceptions.HTTPError(
+                f"{exc} Response body: {details}", response=response
+            ) from exc
+        raise
     data = response.json()
     data["client_id"] = client_id
     data["client_secret"] = client_secret
